@@ -37,7 +37,7 @@ type Aktivitaet = {
 }
 type Aufgabe = {
   id: string
-  firma_id: string
+  firma_id: string | null
   titel: string
   zugewiesen_an: string
   faellig_am: string | null
@@ -323,9 +323,11 @@ function DashboardView({
             const isOverdue = !!(t.faellig_am && t.faellig_am < today)
             return (
               <li key={t.id}>
-                <a className="row-link" onClick={() => onOpenFirma(t.firma_id)}>
-                  {firmaName(t.firma_id)}
-                </a>
+                {t.firma_id && (
+                  <a className="row-link" onClick={() => onOpenFirma(t.firma_id as string)}>
+                    {firmaName(t.firma_id)}
+                  </a>
+                )}
                 <span className={'date' + (isOverdue ? ' task-overdue' : '')}>
                   {t.faellig_am ? fmtDate(t.faellig_am) + (t.uhrzeit ? ', ' + t.uhrzeit + ' Uhr' : '') : 'ohne Termin'}
                 </span>
@@ -349,9 +351,11 @@ function DashboardView({
             const isOverdue = !!(t.faellig_am && t.faellig_am < today)
             return (
               <li key={t.id}>
-                <a className="row-link" onClick={() => onOpenFirma(t.firma_id)}>
-                  {firmaName(t.firma_id)}
-                </a>{' '}
+                {t.firma_id && (
+                  <a className="row-link" onClick={() => onOpenFirma(t.firma_id as string)}>
+                    {firmaName(t.firma_id)}
+                  </a>
+                )}{' '}
                 <span className={'badge ' + assigneeBadgeClass(t.zugewiesen_an)}>{t.zugewiesen_an}</span>
                 <span className={'date' + (isOverdue ? ' task-overdue' : '')}>
                   {t.faellig_am ? fmtDate(t.faellig_am) + (t.uhrzeit ? ', ' + t.uhrzeit : '') : 'ohne Termin'}
@@ -516,6 +520,7 @@ function AufgabenView({
   onSave,
   onDelete,
   onOpenFirma,
+  onAddTask,
 }: {
   aufgaben: Aufgabe[]
   firmen: Firma[]
@@ -528,6 +533,7 @@ function AufgabenView({
   onSave: (id: string, fields: Partial<Aufgabe>) => void
   onDelete: (id: string, titel: string) => void
   onOpenFirma: (id: string) => void
+  onAddTask: (fields: Partial<Aufgabe>) => void
 }) {
   const today = todayStr()
   let tasks = aufgaben.slice()
@@ -563,6 +569,58 @@ function AufgabenView({
           </span>
         ))}
       </div>
+
+      <div className="card">
+        <h2>Neue Aufgabe</h2>
+        <form
+          className="inline-form"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault()
+            const fd = new FormData(e.currentTarget)
+            onAddTask({
+              titel: String(fd.get('titel') || '').trim(),
+              zugewiesen_an: String(fd.get('zugewiesenAn') || currentUser),
+              faellig_am: (fd.get('faelligAm') as string) || null,
+              uhrzeit: (fd.get('uhrzeit') as string) || null,
+              firma_id: (fd.get('firmaId') as string) || null,
+              erledigt: false,
+            })
+            e.currentTarget.reset()
+          }}
+        >
+          <label>
+            Aufgabe* <input name="titel" required />
+          </label>
+          <label>
+            Firma (optional)
+            <select name="firmaId" defaultValue="">
+              <option value="">Keine Firma</option>
+              {firmen.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Zugewiesen an
+            <select name="zugewiesenAn" defaultValue={currentUser === 'Wael' ? 'Wael' : 'Susu'}>
+              <option value="Susu">Susu</option>
+              <option value="Wael">Wael</option>
+            </select>
+          </label>
+          <label>
+            Fällig am <input name="faelligAm" type="date" />
+          </label>
+          <label>
+            Uhrzeit <input name="uhrzeit" type="time" />
+          </label>
+          <button type="submit" className="small">
+            + Aufgabe anlegen
+          </button>
+        </form>
+      </div>
+
       <div className="card">
         {tasks.length === 0 && <p className="empty-hint">Keine Aufgaben in dieser Ansicht.</p>}
         {tasks.map((t) => {
@@ -580,7 +638,7 @@ function AufgabenView({
               onCancel={() => onEdit(null)}
               onToggle={(erledigt) => onToggle(t.id, erledigt)}
               onDelete={() => onDelete(t.id, t.titel)}
-              onOpenFirma={() => onOpenFirma(t.firma_id)}
+              onOpenFirma={firma ? () => onOpenFirma(firma.id) : undefined}
             />
           )
         })}
@@ -1097,8 +1155,8 @@ export default function CrmApp({ userEmail, currentUser }: { userEmail: string; 
     await supabase.from('ansprechpartner').delete().eq('id', id)
     await fetchAll()
   }
-  async function addAufgabe(firmaId: string, fields: Partial<Aufgabe>) {
-    await supabase.from('aufgaben').insert({ ...fields, firma_id: firmaId })
+  async function addAufgabe(fields: Partial<Aufgabe>) {
+    await supabase.from('aufgaben').insert(fields)
     await fetchAll()
   }
   async function updateAufgabe(id: string, fields: Partial<Aufgabe>) {
@@ -1246,6 +1304,7 @@ export default function CrmApp({ userEmail, currentUser }: { userEmail: string; 
               if (confirm('Aufgabe „' + titel + '" wirklich löschen?')) deleteAufgabe(id)
             }}
             onOpenFirma={openDetail}
+            onAddTask={(fields) => addAufgabe(fields)}
           />
         )}
         {view === 'aktivitaeten' && <AktivitaetenView aktivitaeten={aktivitaeten} firmen={firmen} onOpenFirma={openDetail} />}
@@ -1273,7 +1332,7 @@ export default function CrmApp({ userEmail, currentUser }: { userEmail: string; 
             }}
             onAddAp={(fields) => addAnsprechpartner(selectedFirma.id, fields)}
             onRemoveAp={removeAnsprechpartner}
-            onAddTask={(fields) => addAufgabe(selectedFirma.id, fields)}
+            onAddTask={(fields) => addAufgabe({ ...fields, firma_id: selectedFirma.id })}
             editingTaskId={editingTaskId}
             onEditTask={setEditingTaskId}
             onSaveTask={(id, fields) => {
